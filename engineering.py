@@ -82,6 +82,7 @@ def closeshutter(text,dwell) :  #energizing
   time.sleep(0.25)
   urllib.request.urlopen( baseurl + '/?COMMAND=ACQUIRE:MODE+AVERAGE' ).read() #and this starts it over from scratch
   urllib.request.urlopen( baseurl + '/?COMMAND=HORizontal:RECordlength+10000' ).read() #and this starts it over from scratch
+  #urllib.request.urlopen( baseurl + '/?COMMAND=HORizontal:RECordlength+500' ).read() #and this starts it over from scratch
   return
 
 def openshutter(text,dwell) :   #deenergizing
@@ -209,6 +210,7 @@ class grafit(tk.Frame):
             self.maxIR.append( self.dataToFile[8] )
             self.maxUV.append( self.dataToFile[9] )
             self.figure2.axes[0].cla()
+            self.plt2.grid(True)
             self.plt2.errorbar(self.xar, self.yar, [self.el, self.eh], markersize=6, fmt='^',mec='r',mfc='None')
             self.laserX.append(self.xar[-1])
             self.plt2.plot(self.laserX, self.maxIR, 'mo', fillstyle='none')
@@ -217,7 +219,6 @@ class grafit(tk.Frame):
             self.plt2.set_title("$e^{-}$ Lifetime [$\mu$s] vs Time")
             self.plt2.set_ylabel('$\\tau$($\mu$s)')
             self.plt2.set_xlabel('Time (h)')
-            self.plt2.grid(True)
             try :
                 y_plot_option = self.y_plot_option.get()
                 if y_plot_option == 'Use limits' : 
@@ -359,7 +360,7 @@ class grafit(tk.Frame):
                 self.el.append(errorl)
                 self.eh.append(errorh)
                 self.figure1.axes[0].cla()
-
+                self.plt1.grid()
                 # PLOTTTING PEAKS:
                 # self.plt.subplot(211)
                 # PLOTTING WAVEFORM:
@@ -448,11 +449,17 @@ class grafit(tk.Frame):
     def ud(self) :
         try :
             #print('schedule length',len(schedule.queue))
-            if in_progress == False and total > 0 :
-                self.currentStatus.config(state='normal')
-                self.currentStatus.delete(1.0,tk.END)
-                self.currentStatus.insert(1.0,'Ending the run')
-                self.currentStatus.config(state='disabled')
+            if in_progress == False : #and total > 0 :
+                if self.currentStatus.get(1.0,tk.END) != 'CURRENT STATUS TO BE DISPLAYED\n' : 
+                    self.currentStatus.config(state='normal')
+                    self.currentStatus.delete(1.0,tk.END)
+                    self.currentStatus.insert(1.0,'Ending the run')
+                    self.currentStatus.config(state='disabled')
+                else :
+                    self.currentStatus.config(state='normal')
+                    self.currentStatus.delete(1.0,tk.END)
+                    self.currentStatus.insert(1.0,'CURRENT STATUS TO BE DISPLAYED')
+                    self.currentStatus.config(state='disabled')
             if len( schedule.queue ) > 0 :
                 ct = int((schedule.queue[0].time - time.time())*100)
                 #print(ct)
@@ -525,6 +532,7 @@ class grafit(tk.Frame):
     def end_it(self):
         global in_progress
         global total
+        print('Progress',in_progress)
         if in_progress == False :
             return
         events_remaining = len( schedule.queue )
@@ -721,8 +729,8 @@ class grafit(tk.Frame):
                         # line[7] is ts (time (seconds)) 
                         # line[13] - line[16] are cat_ll, cat_ul, an_ll, an_ul
                     if count == 1:
-                        newtime = linearr[7] - (126144000.0 + 2208988800.0) # start time of the existing file data in Unix time
-                    ts = linearr[7] - (126144000.0 + 2208988800.0)
+                        newtime = linearr[7] - (126144000+2208988800) # start time of the existing file data in Unix time
+                    ts = linearr[7] - (126144000+2208988800)
                     self.xar.append( (ts - newtime) / 3600)
                     tau_e = (81.9 - 10.0) / np.log(linearr[4] / linearr[5])
                     upper_bound = -(81.9 - 10.0) / np.log(linearr[16] / linearr[13])
@@ -747,6 +755,8 @@ class grafit(tk.Frame):
                     self.maxUV.append( linearr[9] )
                     self.figure2.axes[0].cla()
                     self.figure1.axes[0].cla()
+                    self.plt1.grid(True)
+                    self.plt2.grid(True)
                     self.plt2.errorbar(self.xar, self.yar, [self.el, self.eh], markersize=6, fmt='^',mec='r',mfc='None')
                     #self.plt2.set_ylim([self.plt2.get_ylim()[0],])
                     self.laserX.append(self.xar[-1])
@@ -758,8 +768,6 @@ class grafit(tk.Frame):
                     self.plt2.set_title("$e^{-}$ Lifetime [$\mu$s] vs Time")
                     self.plt2.set_ylabel('')#$\\tau$($\mu$s)')
                     self.plt2.set_xlabel('Time (h)')
-                    self.plt1.grid(True)
-                    self.plt2.grid(True)
                     self.canvas1.draw_idle()
                     self.canvas2.draw_idle()
                 self.start_time = newtime # extending the time backwards to accomodate old data so graph renders correctly 
@@ -770,13 +778,18 @@ class grafit(tk.Frame):
                 self.startTime.config(state='disabled')
                 if self.scheduThread.is_alive() == False :
                     self.scheduThread.start()
-            if state == 'overwrite':
+            elif state == 'overwrite':
                 if self.ctr == 0 :
                     if self.scheduThread.is_alive() == False :
                         self.control() 
 
                 print("Opening in overwrite mode")
                 self.saveFile = open(r'%s' % (self.savePath), "w+")  # deletes and overwrites old data
+                self.start_time = time.time()
+                self.startTime.config(state='normal')
+                self.startTime.delete(1.0, tk.END)
+                self.startTime.insert('1.0',time.strftime('%m-%d-%Y %H:%M:%S', time.localtime(self.start_time)))
+                self.startTime.config(state='disabled')
                 self.xar = []
                 self.yar = []
                 self.el = []
@@ -788,6 +801,8 @@ class grafit(tk.Frame):
                 self.t = []
                 self.figure2.axes[0].cla()
                 self.figure1.axes[0].cla()
+                self.plt1.grid()
+                self.plt2.grid()
                 self.plt1.set_title("Most recent waveform")
                 self.plt1.set_ylabel("MilliVolts")
                 self.plt1.set_xlabel(u"Time (\u03bcs)")
@@ -816,8 +831,15 @@ class grafit(tk.Frame):
                 if self.scheduThread.is_alive() == False :
                     self.scheduThread.start()
             self.figure2.axes[0].cla()
+            self.plt1.grid()
+            self.plt2.grid()
             self.canvas2.draw_idle()
             self.ctr = 0
+            self.start_time = time.time()
+            self.startTime.config(state='normal')
+            self.startTime.delete(1.0, tk.END)
+            self.startTime.insert('1.0',time.strftime('%m-%d-%Y %H:%M:%S', time.localtime(self.start_time)))
+            self.startTime.config(state='disabled')
         in_progress = True
 
 
@@ -1063,6 +1085,9 @@ class grafit(tk.Frame):
         self.plot_widget1.grid(row=1, rowspan=64, column=5, columnspan=8)
         self.plot_widget2.grid(row=1, rowspan=64, column=14, columnspan=8)
 
+        self.canvas1.draw_idle()
+        self.canvas2.draw_idle()
+
         # Lower Labels Field
         # Optional TODO: might be better if these text fields are made into their own class, since right now they all function basically
         # identically and there's a lot of repeated lines, both here and in plotit/ud 
@@ -1251,7 +1276,7 @@ class onlineXPMFitter(tk.Tk):
         tk.Tk.__init__(self)
 
         # Set title and screen resolutions
-        tk.Tk.wm_title(self, '*** ENGINEERING GUI ***')
+        tk.Tk.wm_title(self, '*** ENGINEERING GUI - DO NOT USE ***')
         tk.Tk.minsize(self, width=1480, height=530)
         # Optional TODO: Set a custom icon for the XPM application
         # tk.Tk.iconbitmap(self, default="[example].ico")
