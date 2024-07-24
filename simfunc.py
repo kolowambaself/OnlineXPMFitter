@@ -12,13 +12,13 @@ from scipy.special import erfc
 from uncertainties.core import wrap
 
 
-lifetime = 2000.0
+lifetime = 935.0
 
 def doubleBiGaus(x, cat, an, offst):
     tc = 10.0
     ta = 81.9
-    sig_c = 2.0
-    sig_a = 1.4
+    sig_c = 1.0
+    sig_a = 1.0
     i_c = cat*np.exp(-((x-tc)**2)/(2*sig_c**2))
     adjusted_an = np.exp(-(ta-tc)/lifetime)*an 
     i_a = (sig_c/sig_a)*adjusted_an*np.exp(-((x-ta)**2)/(2*sig_a**2))
@@ -75,7 +75,10 @@ t = np.linspace(0.0,163.79,16380)
 t_ad2 = np.linspace(0.0,163.79e-6,16380)
 v_of_t = wavmodel.eval(wavparams,x=t)
 
-plt.plot(t,v_of_t,'.',markersize=1.5)
+plt.plot(t,v_of_t,'r')
+plt.ylabel('Signal [AU]')
+plt.xlabel('Time [$\mu$ s]')
+plt.grid()
 plt.show()
 
 
