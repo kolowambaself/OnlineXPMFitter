@@ -15,7 +15,7 @@ from time import sleep            # needed for delays
 from ctypes import *
 import sys
 
-lifetime = 1000.0
+lifetime = 1200.0
 
 def biGaus_skew(x,cat,sig_c,tau_c,sig_a,tau_a) :
   tc = 10.0
