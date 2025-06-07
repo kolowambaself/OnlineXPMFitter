@@ -9,7 +9,7 @@ from scipy.special import erfc
 from uncertainties.core import wrap
 import os
 from pathlib import WindowsPath, Path
-
+import pandas as pd
 import matplotlib.pyplot as plt   # needed for plotting
 from time import sleep            # needed for delays
 from ctypes import *
@@ -116,10 +116,24 @@ t = np.linspace(0.0,163.79,16380)
 t_ad2 = np.linspace(0.0,163.79e-6,16380)
 print('ground-truth e- lifetime [us]',lifetime)
 
+fp_ = '/home/kolo/vfp25/waveforms/control9r_python.wf.9'
+if len(sys.argv) > 1 :
+    fp_ = sys.argv[1]
+
+rawdf = pd.read_csv(fp_,header=None)
+
+Re = 5.0e4 #XPM effective DC resistance
+CF = 10.0e-12 #UA1 preamp feedback cap
+RF = (395.4e-6)/CF #UA1 feedback resistance
 v_of_t = wavmodel.eval(wavparams,x=t)
-plt.plot(t,v_of_t)
+#plt.plot(t,v_of_t)
+t_raw = np.array(rawdf[0])
+v_raw = np.array(rawdf[1])
+dt = t_raw[1] - t_raw[0]
+v_in = (Re*CF)*np.exp(-t_raw*1.0e-6/(RF*CF))*np.gradient( np.exp(t_raw*1.0e-6/(RF*CF))*v_raw )/(dt*1.0e-6)
+plt.plot(t_raw,v_in,'-')
 plt.grid(True)
 plt.xlabel('Time [$\mu$s]')
-plt.ylabel('Signal [AU]')
+#plt.ylabel('Signal [AU]')
 plt.show()
 
