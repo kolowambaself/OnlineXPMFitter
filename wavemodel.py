@@ -13,110 +13,79 @@ import pandas as pd
 import matplotlib.pyplot as plt   # needed for plotting
 from time import sleep            # needed for delays
 from ctypes import *
+import ROOT
 import sys
 
 lifetime = 1000.0
+sr2 = np.sqrt(2.0)
 
-def biGaus_skew(x,cat,sig_c,tau_c,sig_a,tau_a) :
-  tc = 10.0
-  ta = 81.9
-  i_c = cat*(erfc((tc-x)/sig_c))*np.exp(-(x-tc)/tau_c)
-  adjusted_an = np.exp(-(ta-tc)/lifetime)*cat
-  #i_a = (sig_c/sig_a)*adjusted_an*(erfc((ta-x)/sig_a))*np.exp(-(x-ta)/tau_a)
-  #i_a = (sig_c/sig_a)*adjusted_an*2.0/(1.0+np.exp((ta-x)/sig_a))*np.exp(-(x-ta)/tau_a)
-  i_a = -((sig_c+tau_c)/(sig_a+tau_a))*erfc((ta-x)/sig_a)*np.exp(-(x-ta)/(tau_a))*adjusted_an
-  return  i_c + i_a
+def fitter_func(x, cat, an, tcrise, tarise, offst,thold ):
+    z = np.array(x)
+    x_beg = z[z<10.0]
+    x_mid = z[(z>=10.0)*(z<81.9)]
+    x_end = z[z>=81.9]
+    y_beg = 0.5*cat*erfc(-(x_beg-10.0)/tcrise) - 0.5*an*erfc(-(x_beg-81.9)/tarise)
+    y_mid = 0.5*cat*erfc(-(x_mid-10.0)/tcrise)*np.exp(-(x_mid-10.0)/thold) - 0.5*an*erfc(-(x_mid-81.9)/tarise)
+    y_end = 0.5*cat*erfc(-(x_end-10.0)/tcrise)*np.exp(-(x_end-10.0)/thold) - 0.5*an*erfc(-(x_end-81.9)/tarise)*np.exp(-(x_end-81.9)/thold)
+    y = np.concatenate((y_beg,y_mid,y_end),axis=None)
+    y = y + offst
+    return y
 
-def doubleBiGaus(x, cat):
+def standard_fitter( t , v ) :
+    p_i = [49.98262, 46.10659, 10.0, 1.0, 2.9, 81.9, 395.3, 0.8, 0.9, 43.619015]
+    wavmodel = Model(fitter_func,nan_policy='raise')
+    wavparams = wavmodel.make_params()
+    wavparams['cat'].value = p_i[0]
+    wavparams['cat'].vary = True
+    wavparams['an'].value = p_i[1]
+    wavparams['an'].vary = True
+    wavparams['thold'].value = p_i[6]
+    wavparams['thold'].vary = False
+    wavparams['tcrise'].value = p_i[3]
+    wavparams['tcrise'].vary = False
+    wavparams['tarise'].value = p_i[4]
+    wavparams['tarise'].vary = False
+    wavparams['offst'].value = p_i[9]
+    wavparams['offst'].vary = True
+    fitterfit = wavmodel.fit( v, x=t , params = wavparams )
+    bestparams = fitterfit.best_values
+    
+    tau_e = (p_i[5] - p_i[2])/np.log( bestparams['cat']/bestparams['an'] )
+    return [bestparams['offst'], tau_e , bestparams['cat']]
+
+
+
+def tripleEMG(x,C,sig_c,tau_c,sig_a,tau_a,sig_b,tau_b,tau_e,u) :
     tc = 10.0
     ta = 81.9
-    sig_c = 1.0
-    sig_a = 1.0
-    i_c = cat*np.exp(-((x-tc)**2)/(2*sig_c**2))
-    adjusted_an = np.exp(-(ta-tc)/lifetime)*cat 
-    i_a = (sig_c/sig_a)*adjusted_an*np.exp(-((x-ta)**2)/(2*sig_a**2))
+    
+    i_c = (C/(2*tau_c))*np.exp(-sig_c*sig_c/(2*tau_c*tau_c))*np.exp((tc-x)/tau_c)*erfc((tc-x)/(sr2*sig_c))
+
+    i_a = (C*(1-u)/(2*tau_a))*np.exp(-sig_a*sig_a/(2*tau_a*tau_a))*np.exp((ta-x)/tau_a)*erfc((ta-x)/(sr2*sig_a))*np.exp(-(ta-tc)/tau_e)
+    
+    i_a = i_a + (C*u/(2*tau_b))*np.exp(-sig_b*sig_b/(2*tau_b*tau_b))*np.exp((ta-x)/tau_b)*erfc((ta-x)/(sr2*sig_b))*np.exp(-(ta-tc)/tau_e)
+
     return i_c - i_a
 
-sqrt2 = np.sqrt(2.0)
-sqrt2pi = np.sqrt(2.0*np.pi)
-def expGaus_skewVoigt(x,cat,sig_c,tau_c,sig_a,gam_a,skew) :
-  tc = 10.0
-  ta = 81.9
-  i_c = cat*(erfc((tc-x)/sig_c))*np.exp(-(x-tc)/tau_c)
-  adjusted_an = np.exp(-(ta-tc)/lifetime)*cat
-
-  z_a = (x - ta + gam_a*1j)/(sig_a*sqrt2)
-  realw_a = -adjusted_an*np.real(wofz(z_a))/(sqrt2pi*sig_a)
-  i_a = (sig_c)/(sig_a)*(realw_a)*(erfc(skew*(ta-x)/(sig_a*sqrt2)))
-  return  i_c + i_a # + 0.028515897
-
-def expGaus_skew(x,cat,sig_c,tau_c,sig_a,tau_a) :
-  tc = 10.0
-  ta = 81.9
-  i_c = cat*(erfc((tc-x)/sig_c))*np.exp(-(x-tc)/tau_c)
-  adjusted_an = np.exp(-(ta-tc)/lifetime)*cat
-  i_a = -(np.sqrt(sig_c**2+tau_c**2)/np.sqrt(sig_a**2+tau_a**2))*(erfc((ta-x)/sig_a))*(np.exp(-(x-ta)/(tau_a)))*adjusted_an
-  return  i_c + i_a
-
-"""-----------------------------------------------------------------------"""
-def skewVoigtC_skewVoigtA_yesGamma (x, cat, sig_c, gam_c, skew_c, an, sig_a, skew_a,offst):
-    CF = 1.0  # feedback capacitance (not really 1, but it doesn't really matter anyway since it will divide out,
-              # it's just here to turn voltage into charge in the equation)
-    ta = 81.9 # where t = 1 on the anode
-    tc = 10.0 # where t = 1 on the cathode
-    sqrt2 = np.sqrt(2.0)
-    sqrt2pi = np.sqrt(2.0*np.pi)
-    # anode
-    z_a = (x - ta + sig_a*1j)/(sig_a*sqrt2) # first part of the Voigt dist
-    adjusted_an = np.exp(-(ta-tc)/lifetime)*an 
-    realw_a = adjusted_an*np.real(wofz(z_a))/(sqrt2pi*sig_a) # real component of a Faddeeva func of A 
-    i_a = (realw_a)*(2.0/(1.0+np.exp((ta-x)/skew_a))) # multiply everything by the Fermi function
-    anode = -(1.0/CF)*i_a
-
-    # cathode - this is just the anode code again 
-    z_c = (x - tc + gam_c*1j)/(sig_c*sqrt2)
-    realw_c = -cat*np.real(wofz(z_c))/(sqrt2pi*sig_c)
-    i_c = (realw_c)*(2.0/(1.0+np.exp((tc-x)/skew_c)))
-    cathode = -(1.0/CF)*i_c
-
-    return cathode + anode + offst
-
-#wavmodel = Model(biGaus_skew,nan_policy='raise')
-#wavparams = wavmodel.make_params()
-#wavparams['cat'].value = 1.0   # formerly qc
-#wavparams['sig_c'].value = 2.3331900249976414
-#wavparams['tau_c'].value = 1.9260917008369134
-#wavparams['sig_a'].value = 1.5068445074484516
-#wavparams['tau_a'].value = 1.3511128944360826
-
-#wavmodel = Model(doubleBiGaus,nan_policy='raise')
-#wavparams = wavmodel.make_params()
-#wavmodel = Model(skewVoigtC_skewVoigtA_yesGamma,nan_policy='raise')
-#wavparams = wavmodel.make_params()
-#wavparams['cat'].value = 1.0   # formerly qc
-
-#wavmodel = Model(expGaus_skewVoigt,nan_policy='raise')
-#wavparams = wavmodel.make_params()
-#wavparams['cat'].value = 1.0   # formerly qc
-#wavparams['sig_c'].value =  2.4426740601859485
-#wavparams['tau_c'].value = 2.0639455769341524
-#wavparams['sig_a'].value = 0.5376770542018842
-#wavparams['gam_a'].value = 1.0603610428272454
-#wavparams['skew'].value =  0.05928022074975299
-
-wavmodel = Model(expGaus_skew,nan_policy='raise')
+wavmodel = Model(tripleEMG,nan_policy='raise')
 wavparams = wavmodel.make_params()
-wavparams['cat'].value = 1.0
-wavparams['sig_c'].value = 2.323785373027948
-wavparams['tau_c'].value = 1.9216895263092932
-wavparams['sig_a'].value =  1.5121733234495
-wavparams['tau_a'].value = 1.35520629870204
+wavparams['sig_c'].value = 1.802413465144426
+wavparams['sig_c'].vary = True
+wavparams['tau_c'].value = 1.9985896958025484
+wavparams['tau_c'].vary = True
+wavparams['sig_a'].value = 1.529593444572774
+wavparams['sig_a'].vary = True
+wavparams['tau_a'].value = 3.464204079341444
+wavparams['tau_a'].vary = True
+wavparams['sig_b'].value = 0.8584183527001371
+wavparams['sig_b'].vary = True
+wavparams['tau_b'].value = 0.7328886548426345
+wavparams['tau_b'].vary = True
+wavparams['u'].value = 0.6331209811647985 #fractional admixture of the 'b' anode pulse
+wavparams['u'].vary = True #fractional admixture of the 'b' anode pulse
 
-t = np.linspace(0.0,163.79,16380)
-t_ad2 = np.linspace(0.0,163.79e-6,16380)
-print('ground-truth e- lifetime [us]',lifetime)
 
-fp_ = '/home/kolo/vfp25/waveforms/control9r_python.wf.9'
+fp_ = '/home/kolo/vfp25/waveforms/control9r_python.wf.40'
 if len(sys.argv) > 1 :
     fp_ = sys.argv[1]
 
@@ -124,16 +93,65 @@ rawdf = pd.read_csv(fp_,header=None)
 
 Re = 5.0e4 #XPM effective DC resistance
 CF = 10.0e-12 #UA1 preamp feedback cap
-RF = (395.4e-6)/CF #UA1 feedback resistance
-v_of_t = wavmodel.eval(wavparams,x=t)
-#plt.plot(t,v_of_t)
+RF = (395.3e-6)/CF #UA1 feedback resistance
 t_raw = np.array(rawdf[0])
 v_raw = np.array(rawdf[1])
 dt = t_raw[1] - t_raw[0]
-v_in = (Re*CF)*np.exp(-t_raw*1.0e-6/(RF*CF))*np.gradient( np.exp(t_raw*1.0e-6/(RF*CF))*v_raw )/(dt*1.0e-6)
-plt.plot(t_raw,v_in,'-')
+i_in = CF*np.exp(-t_raw*1.0e-6/(RF*CF))*np.gradient( np.exp(t_raw*1.0e-6/(RF*CF))*v_raw )/(dt*1.0e-6)
+plt.plot(t_raw,i_in*1000.0,'-') #convert A to mA
+
+hist2 = ROOT.TH2F('hist2','',int(len(t_raw)/10), t_raw[0], t_raw[-1], 80 , -0.2 , 0.2 )
+for t,iv in zip( t_raw, i_in ) :
+    hist2.Fill(t,iv*1000.0)
+myprof = hist2.ProfileX('myprof')
+
+x = []
+y = []
+e = []
+ex = []
+for bin in range(1,myprof.GetNbinsX()+2) :
+   # print(bin,myprof.GetBinContent(bin),myprof.GetBinEntries(bin))
+   #if( myprof.GetBinEntries(bin)<=3 ): continue
+   x.append(myprof.GetBinCenter(bin))
+   y.append(myprof.GetBinContent(bin))
+   e.append(myprof.GetBinError(bin))
+   ex.append(myprof.GetBinWidth(bin)/2.0)
+       
+#plt.errorbar(x,y,e,fmt='.')
+
+wavparams['tau_e'].value = standard_fitter( t_raw , v_raw )[1] 
+wavparams['tau_e'].vary = False
+wavparams['C'].value = standard_fitter( t_raw , v_raw )[2]/100.0 # overall normalization
+wavparams['C'].vary = False   # overall normalization
+wavefit = wavmodel.fit( i_in*1000.0, x=t_raw , params = wavparams )
+
+bestparams = wavefit.best_values
+
+wavparams['C'].value = bestparams['C']   # overall normalization
+wavparams['sig_c'].value = bestparams['sig_c']
+wavparams['tau_c'].value = bestparams['tau_c']
+wavparams['sig_a'].value = bestparams['sig_a']
+wavparams['tau_a'].value = bestparams['tau_a']
+wavparams['sig_b'].value = bestparams['tau_b']
+wavparams['tau_b'].value = bestparams['tau_b']
+wavparams['u'].value = bestparams['u']
+#print(bestparams)
+
+print( fp_, np.max( v_raw ) - v_raw[0] , bestparams['C'], bestparams['sig_c'], bestparams['sig_a'],bestparams['tau_a'],bestparams['tau_b'],bestparams['u'],bestparams['tau_e'], wavefit.redchi )
+
+v_of_t = wavmodel.eval(wavparams,x=t_raw)
+
+plt.plot(t_raw , v_of_t )
+
+integrand = v_of_t*np.exp(t_raw*1.0e-6/(RF*CF))/1000.0
+
+vout = np.exp(-t_raw*1.0e-6/(RF*CF))*integrate.cumulative_trapezoid(integrand, t_raw*1.0e-6, dx=dt*1.0e-6, initial=0)/(CF)
+
+
+plt.plot(t_raw,vout+standard_fitter( t_raw , v_raw )[0])
+plt.plot(t_raw, v_raw)
 plt.grid(True)
 plt.xlabel('Time [$\mu$s]')
-#plt.ylabel('Signal [AU]')
+#plt.ylabel('Signal [mA]')
 plt.show()
 
