@@ -1,4 +1,4 @@
-from WF_SDK import device, scope, wavegen, tools, error   # import instruments
+from WF_SDK import device, scope, wavegen  # import instruments
 import numpy as np
 from scipy.special import wofz
 from lmfit.models import SkewedVoigtModel
@@ -24,7 +24,9 @@ else:
     dwf = cdll.LoadLibrary("libdwf.so")
 
 lifetime = 940.0
-
+sr2 = np.sqrt(2.0)
+CF = 10.0e-12 #UA1 preamp feedback cap
+RF = (395.3e-6)/CF #UA1 feedback resistance
 
 def biGaus_skew(x,cat,sig_c,tau_c,sig_a,tau_a) :
   tc = 10.0
@@ -67,7 +69,18 @@ def expGaus_skew(x,cat,sig_c,tau_c,sig_a,tau_a) :
   adjusted_an = np.exp(-(ta-tc)/lifetime)*cat
   i_a = -(np.sqrt(sig_c**2+tau_c**2)/np.sqrt(sig_a**2+tau_a**2))*(erfc((ta-x)/sig_a))*(np.exp(-(x-ta)/(tau_a)))*adjusted_an
   return  i_c + i_a
+"""-----------------------------------------------------------------------"""
+def tripleEMG(x,cat,sig_c,tau_c,sig_a,tau_a,sig_b,tau_b,tau_e,u) :
+    tc = 10.0
+    ta = 81.9
+    C = (cat/1000.0)*(CF/1.0e-6) #Note that parameter C is in C/s, but cat is in mA⋅us/F. Note also that CF=10 pF
+    i_c = (C/(2*tau_c))*np.exp(-sig_c*sig_c/(2*tau_c*tau_c))*np.exp((tc-x)/tau_c)*erfc((tc-x)/(sr2*sig_c))
 
+    i_a = (C*(1-u)/(2*tau_a))*np.exp(-sig_a*sig_a/(2*tau_a*tau_a))*np.exp((ta-x)/tau_a)*erfc((ta-x)/(sr2*sig_a))*np.exp(-(ta-tc)/tau_e)
+
+    i_a = i_a + (C*u/(2*tau_b))*np.exp(-sig_b*sig_b/(2*tau_b*tau_b))*np.exp((ta-x)/tau_b)*erfc((ta-x)/(sr2*sig_b))*np.exp(-(ta-tc)/tau_e)
+
+    return i_c - i_a
 """-----------------------------------------------------------------------"""
 def skewVoigtC_skewVoigtA_yesGamma (x, cat, sig_c, gam_c, skew_c, an, sig_a, skew_a,offst):
     CF = 1.0  # feedback capacitance (not really 1, but it doesn't really matter anyway since it will divide out,
@@ -114,13 +127,25 @@ def skewVoigtC_skewVoigtA_yesGamma (x, cat, sig_c, gam_c, skew_c, an, sig_a, ske
 #wavparams['gam_a'].value = 1.0603610428272454
 #wavparams['skew'].value =  0.05928022074975299
 
-wavmodel = Model(expGaus_skew,nan_policy='raise')
+#wavmodel = Model(expGaus_skew,nan_policy='raise')
+#wavparams = wavmodel.make_params()
+#wavparams['cat'].value = 1.0
+#wavparams['sig_c'].value = 2.323785373027948
+#wavparams['tau_c'].value = 1.9216895263092932
+#wavparams['sig_a'].value =  1.5121733234495
+#wavparams['tau_a'].value = 1.35520629870204
+
+wavmodel = Model(tripleEMG,nan_policy='raise')
 wavparams = wavmodel.make_params()
-wavparams['cat'].value = 1.0
-wavparams['sig_c'].value = 2.323785373027948
-wavparams['tau_c'].value = 1.9216895263092932
-wavparams['sig_a'].value =  1.5121733234495
-wavparams['tau_a'].value = 1.35520629870204
+wavparams['sig_c'].value = 1.779
+wavparams['tau_c'].value = 1.969
+wavparams['sig_a'].value = 1.794
+wavparams['tau_a'].value = 3.659
+wavparams['sig_b'].value = 0.8368
+wavparams['tau_b'].value = 0.6773
+wavparams['u'].value = 0.6167 #fractional admixture of the 'b' anode pulse
+wavparams['tau_e'].value = lifetime
+wavparams['cat'].value = 50.0 # in 'XPM units' (mA⋅us/F)
 
 t = np.linspace(0.0,163.79,16380)
 t_ad2 = np.linspace(0.0,163.79e-6,16380)
@@ -134,88 +159,96 @@ plt.ylabel('Signal [AU]')
 plt.show()
 
 try:
-    device_ct = c_int()
-    dwf.FDwfEnum( scope.constants.enumfilterAll , byref(device_ct) )
+  device_data = device.open('Analog Discovery 2')     #if the AD2 is connected
+  is_connected = True
+  print('AD2 connected')
+except:     # if it isn't, we want to ignore the code that handles it. i would make this nicer if i could find the wf_sdk docs
+  is_connected = False
+  print('AD2 not found')
+if is_connected == True :
+    try:
+        device_ct = c_int()
+        dwf.FDwfEnum( scope.constants.enumfilterAll , byref(device_ct) )
 
-    # connect to the device
-    hdwf0 = c_int()
-    hdwf1 = c_int()
-    #dwf.FDwfDeviceOpen(c_int(1),byref(hdwf1))
+        # connect to the device
+        hdwf0 = c_int()
+        hdwf1 = c_int()
+        #dwf.FDwfDeviceOpen(c_int(1),byref(hdwf1))
 
-    device_name0 = create_string_buffer(32)
-    device_name1 = create_string_buffer(32)
-    dwf.FDwfEnumDeviceName( 0 , byref(device_name0) )
-    dwf.FDwfEnumDeviceName( 1 , byref(device_name1) )
-    device_data = device.data()
-    if device_name0.value == 'Analog Discovery 3' :
-        dwf.FDwfDeviceOpen(c_int(0),byref(hdwf0))
-        device_data.handle = hdwf0.value
-    else :
-        dwf.FDwfDeviceOpen(c_int(1),byref(hdwf1))
-        device_data.handle = hdwf1.value
+        device_name0 = create_string_buffer(32)
+        device_name1 = create_string_buffer(32)
+        dwf.FDwfEnumDeviceName( 0 , byref(device_name0) )
+        dwf.FDwfEnumDeviceName( 1 , byref(device_name1) )
+        device_data = device.data()
+        if device_name0.value == 'Analog Discovery 3' :
+            dwf.FDwfDeviceOpen(c_int(0),byref(hdwf0))
+            device_data.handle = hdwf0.value
+        else :
+            dwf.FDwfDeviceOpen(c_int(1),byref(hdwf1))
+            device_data.handle = hdwf1.value
 
-    device_data.name = device_name0.value
-    device_data = device.__get_info__(device_data)
+        device_data.name = device_name0.value
+        device_data = device.__get_info__(device_data)
 
 
-    """-----------------------------------"""
-    # handle devices without analog I/O channels
-    if device_data.name != "Digital Discovery":
+        """-----------------------------------"""
+        # handle devices without analog I/O channels
+        if device_data.name != "Digital Discovery":
 
-        # initialize the scope with default settings
-        scope.open(device_data)
+            # initialize the scope with default settings
+            scope.open(device_data)
 
-        # generate a 10KHz sine signal with 2V amplitude on channel 1
-        wavegen.enable(device_data, channel=1)
+            # generate a 10KHz sine signal with 2V amplitude on channel 1
+            wavegen.enable(device_data, channel=1)
 
-        # set up triggering on scope channel 1
-        scope.trigger(device_data, enable=True, source=scope.constants.trigsrcDetectorAnalogIn, channel=2, level=0.1)
-        wavegen.dwf.FDwfAnalogInConfigure(device_data.handle, c_int(1), c_int(False), c_int(True))
+            # set up triggering on scope channel 1
+            scope.trigger(device_data, enable=True, source=scope.constants.trigsrcDetectorAnalogIn, channel=2, level=0.1)
+            wavegen.dwf.FDwfAnalogInConfigure(device_data.handle, c_int(1), c_int(False), c_int(True))
 
-        wavegen.dwf.FDwfAnalogOutNodeEnableSet(device_data.handle, c_int(0), scope.constants.AnalogOutNodeCarrier, c_bool(True))
-        wavegen.dwf.FDwfAnalogOutTriggerSourceSet(device_data.handle,c_int(-1),scope.constants.trigsrcDetectorAnalogIn)
-        wavegen.dwf.FDwfDeviceTriggerSet(device_data.handle,c_int(-1),scope.constants.trigsrcDetectorAnalogIn)
-        wavegen.dwf.FDwfAnalogOutRunSet(device_data.handle, c_int(0) , c_double(163.80e-6))
-        wavegen.dwf.FDwfAnalogOutRepeatSet(device_data.handle, c_int(0), c_int(1))
-        #wavegen.dwf.FDwfAnalogOutIdleSet(device_data.handle, c_int(-1), scope.constants.DwfAnalogOutIdleInitial)
-        mydata = (c_double * len(v_of_t))()
-        for i in range(0, len(mydata)) :
-            mydata[i] = c_double(v_of_t[i])
-        wavegen.dwf.FDwfAnalogOutNodeFunctionSet(device_data.handle, c_int(0), scope.constants.AnalogOutNodeCarrier, scope.constants.funcCustom )
-        wavegen.dwf.FDwfAnalogOutNodeDataSet(device_data.handle, c_int(0), scope.constants.AnalogOutNodeCarrier, mydata, c_int(len(v_of_t)) )
-        wavegen.dwf.FDwfAnalogOutNodeFrequencySet(device_data.handle, c_int(0), scope.constants.AnalogOutNodeCarrier, c_double(6.105006105e3))
-        #wavegen.dwf.FDwfAnalogOutNodeAmplitudeSet(device_data.handle, c_int(0), scope.constants.AnalogOutNodeCarrier, c_double(1.305))
-        wavegen.dwf.FDwfAnalogOutNodeAmplitudeSet(device_data.handle, c_int(0), scope.constants.AnalogOutNodeCarrier, c_double(0.2175))
-        #wavegen.generate(device_data, channel=1, function=wavegen.function.custom, offset=0, frequency=1.25e3, amplitude=0.05, data=v_of_t)
+            wavegen.dwf.FDwfAnalogOutNodeEnableSet(device_data.handle, c_int(0), scope.constants.AnalogOutNodeCarrier, c_bool(True))
+            wavegen.dwf.FDwfAnalogOutTriggerSourceSet(device_data.handle,c_int(-1),scope.constants.trigsrcDetectorAnalogIn)
+            wavegen.dwf.FDwfDeviceTriggerSet(device_data.handle,c_int(-1),scope.constants.trigsrcDetectorAnalogIn)
+            wavegen.dwf.FDwfAnalogOutRunSet(device_data.handle, c_int(0) , c_double(163.80e-6))
+            wavegen.dwf.FDwfAnalogOutRepeatSet(device_data.handle, c_int(0), c_int(1))
+            #wavegen.dwf.FDwfAnalogOutIdleSet(device_data.handle, c_int(-1), scope.constants.DwfAnalogOutIdleInitial)
+            mydata = (c_double * len(v_of_t))()
+            for i in range(0, len(mydata)) :
+                mydata[i] = c_double(v_of_t[i])
+            wavegen.dwf.FDwfAnalogOutNodeFunctionSet(device_data.handle, c_int(0), scope.constants.AnalogOutNodeCarrier, scope.constants.funcCustom )
+            wavegen.dwf.FDwfAnalogOutNodeDataSet(device_data.handle, c_int(0), scope.constants.AnalogOutNodeCarrier, mydata, c_int(len(v_of_t)) )
+            wavegen.dwf.FDwfAnalogOutNodeFrequencySet(device_data.handle, c_int(0), scope.constants.AnalogOutNodeCarrier, c_double(6.105006105e3))
+            #wavegen.dwf.FDwfAnalogOutNodeAmplitudeSet(device_data.handle, c_int(0), scope.constants.AnalogOutNodeCarrier, c_double(1.305))
+            wavegen.dwf.FDwfAnalogOutNodeAmplitudeSet(device_data.handle, c_int(0), scope.constants.AnalogOutNodeCarrier, c_double(0.2175))
+            #wavegen.generate(device_data, channel=1, function=wavegen.function.custom, offset=0, frequency=1.25e3, amplitude=0.05, data=v_of_t)
 
-        while True :
-            try :
-                sleep(0.5)
-                st = c_int(0)
-                #print(wavegen.dwf.FDwfAnalogOutStatus(device_data.handle, c_bool(False), st),st)
-                try:
-                    pathExists = (WindowsPath.home() / '.shutterclosed').exists()
-                except:
-                    pathExists = Path('/tmp/.shutterclosed').exists()
+            while True :
+                try :
+                    sleep(0.5)
+                    st = c_int(0)
+                    #print(wavegen.dwf.FDwfAnalogOutStatus(device_data.handle, c_bool(False), st),st)
+                    try:
+                        pathExists = (WindowsPath.home() / '.shutterclosed').exists()
+                    except:
+                        pathExists = Path('/tmp/.shutterclosed').exists()
 
-                if pathExists == True: #shutter is closed
-                    wavegen.dwf.FDwfAnalogOutConfigure(device_data.handle, c_int(0), c_int(0))
-                else :
-                    wavegen.dwf.FDwfAnalogOutConfigure(device_data.handle, c_int(0), c_int(1))
-            except KeyboardInterrupt :
-                break
+                    if pathExists == True: #shutter is closed
+                        wavegen.dwf.FDwfAnalogOutConfigure(device_data.handle, c_int(0), c_int(0))
+                    else :
+                        wavegen.dwf.FDwfAnalogOutConfigure(device_data.handle, c_int(0), c_int(1))
+                except KeyboardInterrupt :
+                    break
 
-        # reset the scope
-        scope.close(device_data)
+            # reset the scope
+            scope.close(device_data)
 
-        # reset the wavegen
-        wavegen.close(device_data)
+            # reset the wavegen
+            wavegen.close(device_data)
 
-    """-----------------------------------"""
+        """-----------------------------------"""
 
-    # close the connection
-    device.close(device_data)
-except error as e:
-    print(e)
-    # close the connection
-    #device.close(device.data)
+        # close the connection
+        device.close(device_data)
+    except exception as e:
+        print(e)
+        # close the connection
+        #device.close(device.data)
