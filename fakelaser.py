@@ -151,7 +151,7 @@ t = np.linspace(0.0,163.79,16380)
 t_ad2 = np.linspace(0.0,163.79e-6,16380)
 print('ground-truth e- lifetime [us]',lifetime)
 
-v_of_t = wavmodel.eval(wavparams,x=t)
+v_of_t = 5.0e6*wavmodel.eval(wavparams,x=t) #5M resistor converts current to voltage
 plt.plot(t,v_of_t)
 plt.grid(True)
 plt.xlabel('Time [$\mu$s]')
