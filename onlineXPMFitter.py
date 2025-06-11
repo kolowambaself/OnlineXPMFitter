@@ -49,9 +49,9 @@ datasourceXPM = '/?COMMAND=data:source+CH1';
 datasouceLaser1 = '/?COMMAND=data:source+CH2' 
 datasourceLaser2 = '/?COMMAND=data:source+CH3'
 if BROKE_SCOPE == True :
-datasourceXPM = '/?COMMAND=data:source+CH2'; 
-datasouceLaser1 = '/?COMMAND=data:source+CH3' 
-datasourceLaser2 = '/?COMMAND=data:source+CH4'
+    datasourceXPM = '/?COMMAND=data:source+CH2'; 
+    datasouceLaser1 = '/?COMMAND=data:source+CH3' 
+    datasourceLaser2 = '/?COMMAND=data:source+CH4'
 
 def startSchedule():
     try :
