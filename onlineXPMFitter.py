@@ -44,6 +44,15 @@ total = 0.0
 energized = False   # SHOULD start as OFF by default
 in_progress = False
 
+BROKE_SCOPE = False
+datasourceXPM = '/?COMMAND=data:source+CH1'; 
+datasouceLaser1 = '/?COMMAND=data:source+CH2' 
+datasourceLaser2 = '/?COMMAND=data:source+CH3'
+if BROKE_SCOPE == True :
+datasourceXPM = '/?COMMAND=data:source+CH2'; 
+datasouceLaser1 = '/?COMMAND=data:source+CH3' 
+datasourceLaser2 = '/?COMMAND=data:source+CH4'
+
 def startSchedule():
     try :
     #print('running schedule')
@@ -166,7 +175,7 @@ class grafit(tk.Frame):
     def plotit(self,  text='' , dwell=0.0 , islaser=False ):
         baseurl = 'http://' + str(self.scopeIPText.get('1.0','end-1c'))
         if islaser : #Handle the laser traces
-            urllib.request.urlopen( baseurl + '/?COMMAND=data:source+CH2' ).read()
+            urllib.request.urlopen( baseurl + datasourceLaser1 ).read()
             myurl = baseurl + '/?COMMAND=wfmpre?'
             f2 = urllib.request.urlopen( myurl )
             wfmpre = f2.read().decode()
@@ -175,7 +184,7 @@ class grafit(tk.Frame):
             data = f.read().decode()
             wfm = [float(u) for u in data.split(',')]
             peak1volt = [ (float(dl) - float(wfmpre.split(';')[14])) * 1.0e1 * float(wfmpre.split(';')[12]) + float( wfmpre.split(';')[13]) for dl in wfm]
-            urllib.request.urlopen( baseurl + '/?COMMAND=data:source+CH3' ).read()
+            urllib.request.urlopen( baseurl + datasourceLaser2 ).read()
             myurl = baseurl + '/?COMMAND=wfmpre?'
             f2 = urllib.request.urlopen( myurl )
             wfmpre = f2.read().decode()
@@ -236,13 +245,13 @@ class grafit(tk.Frame):
             self.ctr += 1
             urllib.request.urlopen( baseurl + '/?COMMAND=horizontal:trigger:position+30' ).read()
             urllib.request.urlopen( baseurl + '/?COMMAND=horizontal:main:scale+40e-6' ).read()
-            urllib.request.urlopen( baseurl + '/?COMMAND=data:source+CH1' ).read()
+            urllib.request.urlopen( baseurl + datasourceXPM ).read()
         else :
             urllib.request.urlopen( baseurl + '/?COMMAND=horizontal:trigger:position+30' ).read()
             urllib.request.urlopen( baseurl + '/?COMMAND=horizontal:main:scale+40e-6' ).read()
             #urllib.request.urlopen( baseurl + '/?COMMAND=ACQUIRE:MODE+SAMPLE' ).read() #KDW 2021-1-17 doing this clears the averaging
             #urllib.request.urlopen( baseurl + '/?COMMAND=ACQUIRE:MODE+AVERAGE' ).read() #and this starts it over from scratch
-            urllib.request.urlopen( baseurl + '/?COMMAND=data:source+CH1' ).read()
+            urllib.request.urlopen( baseurl + datasourceXPM ).read()
             data = ''
             myurl = 'http://' + str(self.scopeIPText.get('1.0','end-1c')) + '/?COMMAND=curve?'
             #print(myurl)
