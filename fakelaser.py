@@ -23,7 +23,7 @@ elif sys.platform.startswith("darwin"):
 else:
     dwf = cdll.LoadLibrary("libdwf.so")
 
-lifetime = 940.0
+lifetime = 1500.0
 sr2 = np.sqrt(2.0)
 CF = 10.0e-12 #UA1 preamp feedback cap
 RF = (395.3e-6)/CF #UA1 feedback resistance
